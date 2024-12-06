@@ -36,7 +36,7 @@ recordA =
     $ Anon.insert #c (I 1)
     $ Anon.empty
 
-recordA' :: Record I [ "b" := Char, "a" := Bool, "c" := Int ]
+recordA' :: Record I [ "b" := Char, "a" := Bool, "c" := Int  ]
 recordA' =
       Anon.insert #b (I 'a')
     $ Anon.insert #a (I True)

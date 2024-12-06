@@ -39,7 +39,7 @@ sourcePlugin rawOpts
 
 transformExpr :: Options -> LHsExpr GhcPs -> FreshT Hsc (LHsExpr GhcPs)
 transformExpr options@Options{debug} e@(reLoc -> L l expr)
-  | RecordCon _ext (L _ nm) (HsRecFields flds dotdot) <- expr
+  | RecordCon _ext (L _ nm) (HsRecFields _ flds dotdot) <- expr
   , Unqual nm' <- nm
   , Nothing    <- dotdot
   , Just mode  <- parseMode (occNameString nm')
@@ -155,7 +155,7 @@ recordWithTypelet LargeAnonNames{..} l p = \fields -> do
 -------------------------------------------------------------------------------}
 
 mkVar :: SrcSpan -> RdrName -> LHsExpr GhcPs
-mkVar l name = reLocA $ L l $ HsVar defExt (reLocA $ L l name)
+mkVar l name = reLoc $ L l $ HsVar defExt (reLoc $ L l name)
 
 -- | Construct simple lambda
 --
@@ -163,4 +163,4 @@ mkVar l name = reLocA $ L l $ HsVar defExt (reLocA $ L l name)
 --
 -- > \x -> e
 simpleLam :: RdrName -> LHsExpr GhcPs -> LHsExpr GhcPs
-simpleLam x body = mkHsLam [nlVarPat x] body
+simpleLam x body = mkHsLam (noLocA [nlVarPat x]) body

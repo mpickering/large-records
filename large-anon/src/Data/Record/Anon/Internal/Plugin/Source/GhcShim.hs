@@ -150,6 +150,8 @@ import GHC.Types.SrcLoc (LayoutInfo(NoLayoutInfo))
 import GHC.Driver.Config.Diagnostic (initPrintConfig)
 #endif
 
+import GHC.Driver.Errors.Types
+
 {-------------------------------------------------------------------------------
   Names
 -------------------------------------------------------------------------------}
@@ -216,7 +218,7 @@ hscNameCacheIO = hsc_NC
 
 -- | Optionally @qualified@ import declaration
 importDecl :: Bool -> ModuleName -> LImportDecl GhcPs
-importDecl qualified name = reLocA $ noLoc $ ImportDecl {
+importDecl qualified name = noLocA $ ImportDecl {
 #if __GLASGOW_HASKELL__ < 906
       ideclExt       = defExt
 #else
@@ -229,7 +231,7 @@ importDecl qualified name = reLocA $ noLoc $ ImportDecl {
 #if __GLASGOW_HASKELL__ < 906
     , ideclSourceSrc = NoSourceText
 #endif
-    , ideclName      = reLocA $ noLoc name
+    , ideclName      = noLocA name
 #if __GLASGOW_HASKELL__ >= 904
     , ideclPkgQual   = NoRawPkgQual
 #else
@@ -279,8 +281,8 @@ issueWarning l errMsg = do
                          (initPrintConfig dynFlags)
                          (initDiagOpts dynFlags)
 
-    let msg :: Err.UnknownDiagnostic
-        msg = Err.UnknownDiagnostic $
+    let msg :: Err.UnknownDiagnostic GhcMessageOpts
+        msg = Err.UnknownDiagnostic (const Err.NoDiagnosticOpts) $
                 mkPlainError [] errMsg
 #endif
     liftIO $ printOrThrow . Err.mkMessages . bag $
@@ -322,7 +324,7 @@ instance HasDefaultExt LayoutInfo where
 #endif
 
 #if __GLASGOW_HASKELL__ >= 902
-instance HasDefaultExt (EpAnn ann) where
+instance NoAnn ann => HasDefaultExt (EpAnn ann) where
   defExt = noAnn
 #endif
 
@@ -343,12 +345,13 @@ reLocA = id
 -------------------------------------------------------------------------------}
 
 mkLabel :: SrcSpan -> FastString -> LHsExpr GhcPs
-mkLabel l n = reLocA $ L l
-            $ HsOverLabel defExt
+mkLabel l n = reLoc $ L l
+            $ HsOverLabel NoSourceText
 #if __GLASGOW_HASKELL__ < 902
                  Nothing -- RebindableSyntax
-#elif __GLASGOW_HASKELL__ >= 906
+#elif __GLASGOW_HASKELL__ <= 911
                  NoSourceText
+#elif __GLASGOW_HASKELL__ >= 911
 #endif
 
                  n

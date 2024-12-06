@@ -35,6 +35,7 @@ import Data.Record.Anon.Internal.Plugin.TC.Parsing
 import Data.Record.Anon.Internal.Plugin.TC.TyConSubst (TyConSubst)
 
 import qualified Data.Record.Anon.Internal.Plugin.TC.Row.KnownRow as KnownRow
+import GHC.Prelude
 
 {-------------------------------------------------------------------------------
   Definition

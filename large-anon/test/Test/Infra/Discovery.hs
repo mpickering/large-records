@@ -35,6 +35,7 @@ import Data.Record.Anon
 import Data.Record.Anon.Advanced (Record, InRow(InRow))
 import qualified Data.Record.Anon.Advanced as Anon
 import Control.Monad.State
+import Data.Record.Anon.Internal.Core.FieldName
 
 {-------------------------------------------------------------------------------
   Intersect rows
@@ -46,10 +47,11 @@ import Control.Monad.State
 data InBothRows (r1 :: Row k) (r2 :: Row k) (a :: k) where
   InBothRows :: forall k (n :: Symbol) (r1 :: Row k) (r2 :: Row k) (a :: k).
        ( KnownSymbol n
+       , KnownHash n
        , RowHasField n r1 a
        , RowHasField n r2 a
        )
-    => Proxy n -> InBothRows r1 r2 a
+    => Field n -> InBothRows r1 r2 a
 
 inLeftRow :: InBothRows r1 r2 a -> InRow r1 a
 inLeftRow (InBothRows n) = InRow n
@@ -84,10 +86,10 @@ intersectRows _ _ =
     checkIsMatch :: forall x1 x2.
          (Typeable x1, Typeable x2)
       => InRow r2 x2 -> InRow r1 x1 -> Maybe (InBothRows r1 r2 x2)
-    checkIsMatch (InRow x2) (InRow x1) = do
+    checkIsMatch (InRow (Field x2)) (InRow (Field x1)) = do
         Refl <- sameSymbol x1 x2
         Refl <- eqT :: Maybe (x1 :~: x2)
-        return $ InBothRows x1
+        return $ InBothRows (Field x1)
 
     findMatch :: [a] -> Maybe a
     findMatch []  = Nothing
@@ -101,7 +103,7 @@ intersectRows _ _ =
 -- | Fields that are missing or have the wrong type
 --
 -- TODO: Ideally we should distinguish between type errors and missing fields.
-type NotSubRow = [String]
+type NotSubRow = [FieldName]
 
 checkIsSubRow :: forall k (r1 :: Row k) (r2 :: Row k) proxy proxy'.
      ( KnownFields r1
@@ -121,8 +123,8 @@ checkIsSubRow p1 p2 =
   where
     checkInLeft ::
          (Maybe :.: InBothRows r1 r2) x
-      -> K String x
-      -> (State [String] :.: Maybe :.: InRow r1) x
+      -> K FieldName x
+      -> (State [FieldName] :.: Maybe :.: InRow r1) x
     checkInLeft (Comp Nothing) (K name) = Comp $ state $ \missing ->
         (Comp Nothing, name : missing)
     checkInLeft (Comp (Just inBoth)) _ = Comp $ state $ \missing ->
@@ -130,7 +132,7 @@ checkIsSubRow p1 p2 =
 
     postprocess ::
          Record (Maybe :.: InRow r1) r2
-      -> [String]
+      -> [FieldName]
       -> Either NotSubRow (Reflected (SubRow r1 r2))
     postprocess matched missing =
         maybe (Left missing) (Right . Anon.reflectSubRow) $
@@ -200,7 +202,7 @@ catMaybeF =
     . Anon.toList
     . Anon.map (K . Some)
   where
-    distrib :: (String, Some (Maybe :.: f)) -> Maybe (String, Some f)
+    distrib :: (FieldName, Some (Maybe :.: f)) -> Maybe (FieldName, Some f)
     distrib (_, Some (Comp Nothing))   = Nothing
     distrib (n, Some (Comp (Just fx))) = Just (n, Some fx)
 

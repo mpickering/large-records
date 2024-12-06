@@ -27,7 +27,7 @@ import qualified Data.Record.Anon.Advanced as Anon
   Definition
 -------------------------------------------------------------------------------}
 
-data DynRecord = DynRecord [(String, Value)]
+data DynRecord = DynRecord [(Anon.FieldName, Value)]
   deriving (Show, Eq)
 
 data Value =

@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators    #-}
+{-# LANGUAGE OverloadedLabels    #-}
 
 {-# OPTIONS_GHC -fplugin=Data.Record.Anon.Plugin #-}
 
@@ -9,7 +10,7 @@ module Test.Sanity.CheckIsSubRow (tests) where
 import Data.Typeable
 
 import Data.Record.Anon
-import Data.Record.Anon.Advanced (Record)
+import Data.Record.Anon.Advanced (Record, FieldName(..))
 
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -28,7 +29,7 @@ test_maybeProject = do
       Right r1 -> assertEqual "Should be equal" r1 example2
 
     case maybeProject example1 (Proxy @Row3) of
-      Left missing -> assertEqual "missing" ["c"] missing
+      Left missing -> assertEqual "missing" [ "c" ] (map fieldNameLabel missing)
       Right _      -> assertFailure "Should not be able to project to Row3"
 
 {-------------------------------------------------------------------------------

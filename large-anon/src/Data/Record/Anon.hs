@@ -28,10 +28,11 @@ module Data.Record.Anon (
   , AllFields
   , KnownFields
   , SubRow
+  , SubRowK
   , RowHasField
 
     -- * Fields
-  , Field
+  , Field(..)
   , KnownHash(..)
 
     -- * Type-level metadata
@@ -55,13 +56,14 @@ module Data.Record.Anon (
   , module GHC.TypeLits
   ) where
 
+
 -- We use explicit import lists for all modules we re-export, so that
 -- Haddock knows what to include in the documentation (and moreover we don't
 -- end up exporting something unexpected).
 
 import Data.Functor.Product (Product(..))
 import Data.Proxy (Proxy(..))
-import Data.SOP.BasicFunctors (I(..), K(..), (:.:)(..), unI)
+import Data.SOP.BasicFunctors (I(..), K(..), (:.:)(..), unComp, unK, unI)
 import Data.SOP.Classes (type (-.->)(..))
 import Data.SOP.Constraint (Compose)
 import Data.SOP.Dict (Dict(..))
@@ -69,7 +71,7 @@ import GHC.Records.Compat (HasField(..))
 import GHC.TypeLits (KnownSymbol)
 
 import Data.Record.Anon.Plugin.Internal.Runtime
-import Data.Record.Anon.Internal.Advanced (Field, Some(..))
+import Data.Record.Anon.Internal.Advanced (Field(..), Some(..))
 import Data.Record.Anon.Internal.Reflection (Reflected(Reflected))
 
 

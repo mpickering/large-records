@@ -49,12 +49,17 @@ module Data.Record.Anon.Plugin.Internal.Runtime (
   , SubRow(..)
   , DictSubRow
   , evidenceSubRow
+  , SubRowK(..)
+  , DictSubRowK
+  , evidenceSubRowK
+  , FieldName(..)
     -- * Utility
   , noInlineUnsafeCo
   ) where
 
 import Data.Kind
 import Data.Primitive.SmallArray
+import Data.Record.Anon.Internal.Core.FieldName
 import Data.Record.Generic hiding (FieldName)
 import Data.SOP.Constraint (Compose)
 import Data.Tagged
@@ -151,9 +156,9 @@ class KnownFields (r :: Row k) where
   fieldNames :: DictKnownFields k r
   fieldNames = undefined
 
-type DictKnownFields k (r :: Row k) = Tagged r [String]
+type DictKnownFields k (r :: Row k) = Tagged r [FieldName]
 
-evidenceKnownFields :: forall k r. [String] -> DictKnownFields k r
+evidenceKnownFields :: forall k r. [FieldName] -> DictKnownFields k r
 evidenceKnownFields = Tagged
 
 {-------------------------------------------------------------------------------
@@ -226,8 +231,8 @@ fieldMetadata :: forall k (r :: Row k) proxy.
 fieldMetadata _ = map aux $ proxy fieldNames (Proxy @r)
   where
     -- @large-anon@ only supports records with strict fields.
-    aux :: String -> FieldMetadata Any
-    aux name = case someSymbolVal name of
+    aux :: FieldName -> FieldMetadata Any
+    aux (FieldName _ name) = case someSymbolVal name of
                  SomeSymbol p -> FieldMetadata p FieldStrict
 
 {-------------------------------------------------------------------------------
@@ -277,6 +282,18 @@ type DictSubRow k (r :: Row k) (r' :: Row k) =
 
 evidenceSubRow :: forall k r r'. [Int] -> DictSubRow k r r'
 evidenceSubRow = Tagged
+
+class SubRowK (f :: k -> Type) (f' :: k' -> Type) (r :: Row k) (r' :: Row k') where
+  projectIndicesK :: DictSubRowK k k' f f' r r'
+  projectIndicesK = undefined
+
+-- | In order of the fields in the /target/ record, the index in the /source/
+type DictSubRowK k k' f f' (r :: Row k) (r' :: Row k') =
+       Tagged '(k, k', f, f', r, r') [Int]
+
+evidenceSubRowK :: forall k k' (f :: k -> Type) (f' :: k' -> Type) (r :: Row k) (r' :: Row k') . [Int] -> DictSubRowK k k' f f' r r'
+evidenceSubRowK = Tagged
+
 
 {-------------------------------------------------------------------------------
   Utility

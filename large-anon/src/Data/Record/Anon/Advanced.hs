@@ -32,6 +32,9 @@ module Data.Record.Anon.Advanced (
   , inject
   , lens
   , merge
+  , projectK
+  , injectK
+  , lensK
     -- * Combinators
     -- ** " Functor "
   , map
@@ -64,6 +67,8 @@ module Data.Record.Anon.Advanced (
   , A.InRow(..)
   , reifySubRow
   , reflectSubRow
+  -- * FieldName
+  , A.FieldName(..)
     -- * Existential records
   , A.SomeRecord(..)
   , someRecord
@@ -88,6 +93,7 @@ import Data.Record.Anon
 
 import Data.Record.Anon.Internal.Advanced (Record)
 import qualified Data.Record.Anon.Internal.Advanced as A
+import Data.Kind
 
 -- $setup
 -- >>> :set -XDataKinds
@@ -300,6 +306,20 @@ set = A.set
 project :: SubRow r r' => Record f r -> Record f r'
 project = A.project
 
+projectK :: forall {k} {k'} (f :: k -> Type) (f' :: k' -> Type) (r :: Row k) (r' :: Row k')
+          . SubRowK f f' r r' => Record f r -> Record f' r'
+projectK = A.projectK
+
+injectK ::
+  forall k k' f f' (r :: Row k) (r' :: Row k')
+  . SubRowK f f' r r' => Record f' r' -> Record f r -> Record f r
+injectK = A.injectK
+
+lensK ::
+  forall k k' f f' (r :: Row k) (r' :: Row k')
+  . SubRowK f f' r r' => Record f r -> (Record f' r', Record f' r' -> Record f r)
+lensK = A.lensK
+
 -- | Inject smaller record into larger record
 --
 -- This is just the 'lens' setter.
@@ -395,7 +415,7 @@ collapse :: Record (K a) r -> [a]
 collapse = A.collapse
 
 -- | Like 'collapse', but also include field names
-toList :: KnownFields r => Record (K a) r -> [(String, a)]
+toList :: KnownFields r => Record (K a) r -> [(A.FieldName, a)]
 toList = A.toList
 
 -- | Analogue of 'Prelude.sequenceA'
@@ -479,13 +499,13 @@ reflectAllFields = A.reflectAllFields
 -- This reifies a 'KnownFields' constraint as a record.
 --
 -- Inverse to 'reflectAllFields'.
-reifyKnownFields :: KnownFields r => proxy r -> Record (K String) r
+reifyKnownFields :: KnownFields r => proxy r -> Record (K A.FieldName) r
 reifyKnownFields = A.reifyKnownFields
 
 -- | Establish 'KnownFields' from a record of field names
 --
 -- Inverse to 'reifyAllFields'.
-reflectKnownFields :: Record (K String) r -> Reflected (KnownFields r)
+reflectKnownFields :: Record (K A.FieldName) r -> Reflected (KnownFields r)
 reflectKnownFields = A.reflectKnownFields
 
 -- | Record over @r'@ with evidence that every field is in @r@.
@@ -541,7 +561,7 @@ reflectSubRow = A.reflectSubRow
 -- rows over kind other than @Type@) for examples of proving additional
 -- constraints, and @Test.Infra.Discovery@ for an example of how you could do a
 -- projection check.
-someRecord :: [(String, Some f)] -> A.SomeRecord f
+someRecord :: [(A.FieldName, Some f)] -> A.SomeRecord f
 someRecord = A.someRecord
 
 {-------------------------------------------------------------------------------

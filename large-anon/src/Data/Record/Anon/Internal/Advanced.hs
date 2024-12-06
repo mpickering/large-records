@@ -15,6 +15,7 @@
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 {-# LANGUAGE ViewPatterns          #-}
+{-# LANGUAGE ImpredicativeTypes          #-}
 
 -- | Full record representation
 --
@@ -27,6 +28,7 @@ module Data.Record.Anon.Internal.Advanced (
     Record -- opaque
     -- * Main API
   , Field(..)
+  , FieldName(..)
   , empty
   , insert
   , insertA
@@ -36,6 +38,9 @@ module Data.Record.Anon.Internal.Advanced (
   , lens
   , project
   , inject
+  , lensK
+  , projectK
+  , injectK
   , applyPending
     -- * Combinators
     -- ** " Foldable "
@@ -93,7 +98,7 @@ import Data.Record.Generic hiding (FieldName)
 import Data.SOP.Classes (fn_2)
 import Data.SOP.Constraint
 import Data.Tagged
-import GHC.Exts (Any)
+import GHC.Exts (Any, withDict)
 import GHC.OverloadedLabels
 import GHC.TypeLits
 import TypeLet.UserAPI
@@ -117,6 +122,8 @@ import Data.Record.Anon.Plugin.Internal.Runtime
 import qualified Data.Record.Anon.Internal.Core.Canonical as Canon
 import qualified Data.Record.Anon.Internal.Core.Diff      as Diff
 import qualified Data.Record.Anon.Internal.Reflection     as Unsafe
+
+import Unsafe.Coerce
 
 {-------------------------------------------------------------------------------
   Definition
@@ -191,6 +198,17 @@ instance forall k (n :: Symbol) (f :: k -> Type) (r :: Row k) (a :: k).
 mkFieldName :: (KnownSymbol n, KnownHash n) => Proxy n -> FieldName
 mkFieldName p = FieldName (hashVal p) (symbolVal p)
 
+
+withFieldName :: forall r . FieldName -> (forall n . Field n -> r) -> r
+withFieldName (FieldName hv sv) k =
+    withSomeSSymbol sv (\(s :: SSymbol s) ->
+      (withDict @(KnownSymbol s) s
+        (withDict @(KnownHash s) @(forall proxy . proxy s -> Int) aux
+          (k (Field (Proxy @s))))))
+  where
+    aux :: forall (proxy :: Symbol -> Type) n . proxy n -> Int
+    aux _ = hv
+
 instance (RowHasField n r a, KnownSymbol n, KnownHash n)
       => Optics.LabelOptic n Optics.A_Lens (Record f r) (Record f r) (f a) (f a) where
   labelOptic = aux (fromLabel @n)
@@ -212,7 +230,7 @@ unsafeGetField i n = co . \case
     co = noInlineUnsafeCo
 
 -- | Low level field update
---
+--)
 -- See comments in 'getField'.
 unsafeSetField :: forall k (f :: k -> Type) (r :: Row k) (a :: k).
     Int -> FieldName -> f a -> Record f r -> Record f r
@@ -296,6 +314,31 @@ project = fst . lens
 -- This is just the 'lens' setter.
 inject :: SubRow r r' => Record f r' -> Record f r -> Record f r
 inject small = ($ small) . snd . lens
+
+lensK :: forall k k' (f :: k -> Type) (f' :: k' -> Type) (r :: Row k) (r' :: Row k').
+     SubRowK f f' r r'
+  => Record f r -> (Record f' r', Record f' r' -> Record f r)
+lensK = \(toCanonical -> r) ->
+    bimap getter setter $
+      Canon.lens (proxy projectIndicesK (Proxy @'(k, k', f, f', r, r'))) r
+  where
+    getter :: Canonical f -> Record f' r'
+    getter = unsafeFromCanonical . unsafeCoerce @_ @(Canonical f')
+
+    setter :: (Canonical f -> Canonical f) -> Record f' r' -> Record f r
+    setter f (toCanonical -> r) = unsafeFromCanonical (f (unsafeCoerce @_ @(Canonical f) r))
+
+-- | Project out subrecord
+--
+-- This is just the 'lens' getter.
+projectK :: SubRowK f f' r r' => Record f r -> Record f' r'
+projectK x = fst $ lensK x
+
+-- | Inject subrecord
+--
+-- This is just the 'lens' setter.
+injectK :: SubRowK f f' r r' => Record f' r' -> Record f r -> Record f r
+injectK small = ($ small) . snd . lensK
 
 applyPending :: Record f r -> Record f r
 applyPending (toCanonical -> r) = unsafeFromCanonical r
@@ -395,16 +438,16 @@ ap (toCanonical -> r) (toCanonical -> r') = unsafeFromCanonical $
 
 reifyKnownFields :: forall k (r :: Row k) proxy.
      KnownFields r
-  => proxy r -> Record (K String) r
+  => proxy r -> Record (K FieldName) r
 reifyKnownFields _ =
     unsafeFromCanonical $
       Canon.fromRowOrderList $ co $ proxy fieldNames (Proxy @r)
   where
-    co :: [String] -> [K String Any]
+    co :: [FieldName] -> [K FieldName Any]
     co = coerce
 
 reflectKnownFields :: forall k (r :: Row k).
-     Record (K String) r
+     Record (K FieldName) r
   -> Reflected (KnownFields r)
 reflectKnownFields names =
     Unsafe.reflectKnownFields $ Tagged $ collapse names
@@ -432,10 +475,9 @@ reflectAllFields dicts =
 -- | @InRow r a@ is evidence that there exists some @n@ s.t. @(n := a)@ in @r@.
 data InRow (r :: Row k) (a :: k) where
   InRow :: forall k (n :: Symbol) (r :: Row k) (a :: k).
-       ( KnownSymbol n
-       , RowHasField n r a
+       ( RowHasField n r a
        )
-    => Proxy n -> InRow r a
+    => Field n -> InRow r a
 
 reifySubRow :: forall k (r :: Row k) (r' :: Row k).
      (SubRow r r', KnownFields r')
@@ -450,10 +492,8 @@ reifySubRow =
     co :: [Int] -> [K Int Any]
     co = coerce
 
-    aux :: forall x. K Int x -> K String x -> InRow r x
-    aux (K i) (K name) =
-        case someSymbolVal name of
-          SomeSymbol p -> unsafeInRow i p
+    aux :: forall x. K Int x -> K FieldName x -> InRow r x
+    aux (K i) (K name) = withFieldName name (\f -> unsafeInRow i f)
 
 reflectSubRow :: forall k (r :: Row k) (r' :: Row k).
      Record (InRow r) r'
@@ -462,10 +502,10 @@ reflectSubRow (toCanonical -> ixs) =
     Unsafe.reflectSubRow $ Tagged $
       (\inRow@(InRow p) -> aux inRow p) <$> Canon.toRowOrderList ixs
   where
-    aux :: forall x n. RowHasField n r x => InRow r x -> Proxy n -> Int
+    aux :: forall x n. RowHasField n r x => InRow r x -> Field n -> Int
     aux _ _ = proxy rowHasField (Proxy @'(n, r, x))
 
-unsafeInRow :: forall n r a. KnownSymbol n => Int -> Proxy n -> InRow r a
+unsafeInRow :: forall n r a. Int -> Field n -> InRow r a
 unsafeInRow i p =
     case reflected of
       Reflected -> InRow p
@@ -490,17 +530,17 @@ data SomeRecord (f :: k -> Type) where
     => Record (Product (InRow r) f) r
     -> SomeRecord f
 
-someRecord :: forall k (f :: k -> Type). [(String, Some f)] -> SomeRecord f
+someRecord :: forall k (f :: k -> Type). [(FieldName, Some f)] -> SomeRecord f
 someRecord fields =
     mkSomeRecord $
       unsafeFromCanonical . Canon.fromRowOrderList $
         Prelude.zipWith
           aux
           (Canon.arrayIndicesInRowOrder (length fields))
-          (Prelude.map (first someSymbolVal) fields)
+          fields
   where
-    aux :: Int -> (SomeSymbol, Some f) -> Product (InRow r) f Any
-    aux i (SomeSymbol n, Some fx) = Pair (unsafeInRow i n) (co fx)
+    aux :: Int -> (FieldName, Some f) -> Product (InRow r) f Any
+    aux i (fn, Some fx) = withFieldName fn $ \n -> Pair (unsafeInRow i n) (co fx)
 
     co :: f x -> f Any
     co = noInlineUnsafeCo
@@ -513,8 +553,8 @@ someRecord fields =
         reflected :: Reflected (KnownFields r)
         reflected = reflectKnownFields $ map getName r
 
-        getName :: Product (InRow r) f x -> K String x
-        getName (Pair (InRow p) _) = K $ symbolVal p
+        getName :: Product (InRow r) f x -> K FieldName x
+        getName (Pair (InRow (Field p)) _) = K $ mkFieldName p
 
 {-------------------------------------------------------------------------------
   Conversion to/from generic 'Rep'
@@ -629,11 +669,8 @@ cmapM ::
   -> Record f r -> m (Record g r)
 cmapM p f = sequenceA . cmap p (Comp . f)
 
-toList :: forall r a. KnownFields r => Record (K a) r -> [(String, a)]
-toList = Prelude.zipWith aux (fieldMetadata (Proxy @r)) . collapse
-  where
-    aux :: FieldMetadata b -> a -> (String, a)
-    aux (FieldMetadata p _) a = (symbolVal p, a)
+toList :: forall r a. KnownFields r => Record (K a) r -> [(FieldName, a)]
+toList = Prelude.zip (proxy fieldNames (Proxy @r)) . collapse
 
 czipWithM :: forall m r c f g h.
      (Applicative m, AllFields r c)

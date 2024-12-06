@@ -17,6 +17,11 @@ module Data.Record.Anon.Internal.Plugin.TC.GhcTcPluginAPI (
   , module GHC.Builtin.Types.Prim
   , module GHC.Core.Make
   , module GHC.Utils.Outputable
+  , getTargetPlatform
+  , tyConSingleDataCon
+  , CtOrigin(..)
+  , GHC.updateCtLocOrigin
+  , GHC.setCtLocOrigin
 
     -- * New functonality
   , isCanonicalVarEq
@@ -25,6 +30,13 @@ module Data.Record.Anon.Internal.Plugin.TC.GhcTcPluginAPI (
   ) where
 
 import GHC.Stack
+import GHC.Core.TyCon
+import qualified GHC.Tc.Plugin as GHC
+import qualified GHC.Platform as GHC
+import GHC.TcPlugin.API.Internal
+import qualified GHC.Tc.Types.Origin
+import qualified GHC.Tc.Types.CtLoc as GHC
+
 
 #if __GLASGOW_HASKELL__ < 900
 import Data.List.NonEmpty (NonEmpty, toList)
@@ -49,6 +61,13 @@ import GHC.Tc.Types.Constraint (Ct(..))
 import GHC.Tc.Types.Constraint (Ct(..), CanEqLHS(..))
 #endif
 
+#if __GLASGOW_HASKELL__ >= 911
+import GHC.Tc.Types.Constraint
+#endif
+
+getTargetPlatform :: TcPluginM Solve GHC.Platform
+getTargetPlatform = liftTcPluginM GHC.getTargetPlatform
+
 isCanonicalVarEq :: Ct -> Maybe (TcTyVar, Type)
 #if __GLASGOW_HASKELL__ >= 810 &&  __GLASGOW_HASKELL__ < 902
 isCanonicalVarEq = \case
@@ -56,13 +75,24 @@ isCanonicalVarEq = \case
     CFunEqCan{..} -> Just (cc_fsk, mkTyConApp cc_fun cc_tyargs)
     _otherwise    -> Nothing
 #endif
-#if __GLASGOW_HASKELL__ >= 902
+#if __GLASGOW_HASKELL__ >= 902 && __GLASGOW_HASKELL__ < 911
 isCanonicalVarEq = \case
     CEqCan{..}
       | TyVarLHS var <- cc_lhs
       -> Just (var, cc_rhs)
       | TyFamLHS tyCon args <- cc_lhs
       , Just var            <- getTyVar_maybe cc_rhs
+      -> Just (var, mkTyConApp tyCon args)
+    _otherwise
+      -> Nothing
+#endif
+#if __GLASGOW_HASKELL__ >= 911
+isCanonicalVarEq = \case
+    CEqCan (EqCt{..})
+      | TyVarLHS var <- eq_lhs
+      -> Just (var, eq_rhs)
+      | TyFamLHS tyCon args <- eq_lhs
+      , Just var            <- getTyVar_maybe eq_rhs
       -> Just (var, mkTyConApp tyCon args)
     _otherwise
       -> Nothing

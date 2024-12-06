@@ -85,14 +85,16 @@ parseConstraint ::
   -> (a -> Maybe b)               -- ^ Parser for the class arguments
   -> Ct                           -- ^ Constraint to parse
   -> ParseResult e (GenLocated CtLoc b)
-parseConstraint p f ct = fmap (L $ ctLoc ct) $
+parseConstraint p f ct = fmap (L $ (updateCtLocOrigin ct_loc ct_origin)) $
     -- TODO: classify up to equalities..?
-    case classifyPredType (ctPred ct) of
+    case classifyPredType ct_pred of
       ClassPred cls args | Just a <- p cls args ->
         case f a of
           Just parsed ->
             ParseOk parsed
           Nothing ->
+            ParseNoMatch
+            {-
             panic $ concat [
                 "Unexpected "
               , showSDocUnsafe (ppr cls)
@@ -101,8 +103,13 @@ parseConstraint p f ct = fmap (L $ ctLoc ct) $
               , "\nat\n"
               , prettyCallStack callStack
               ]
+              -}
       _otherwise ->
         ParseNoMatch
+  where
+    ct_origin = WantedSuperclassOrigin ct_pred
+    ct_loc = ctLoc ct
+    ct_pred = ctPred ct
 
 -- | Specialization of 'parseConstraint', just checking the class name
 parseConstraint' ::

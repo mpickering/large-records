@@ -84,15 +84,15 @@ evidenceKnownFields ::
   -> CKnownFields
   -> KnownRow a
   -> TcPluginM 'Solve EvTerm
-evidenceKnownFields ResolvedNames{..} CKnownFields{..} r = do
-    fields <- mapM KnownField.toExpr (KnownRow.inRowOrder r)
+evidenceKnownFields names@ResolvedNames{..} CKnownFields{..} r = do
+    fields <- mapM (KnownField.toExpr names) (KnownRow.inRowOrder r)
     return $
       evDataConApp
         (classDataCon clsKnownFields)
         typeArgsEvidence
         [ mkCoreApps (Var idEvidenceKnownFields) $ concat [
               map Type typeArgsEvidence
-            , [ mkListExpr stringTy fields ]
+            , [ mkListExpr (mkTyConTy tyConFieldName) fields ]
             ]
         ]
   where

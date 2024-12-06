@@ -1,10 +1,10 @@
 {-# LANGUAGE DataKinds       #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Data.Record.Anon.Internal.Plugin.TC.Constraints.SubRow (
-    CSubRow(..)
-  , parseSubRow
-  , solveSubRow
+module Data.Record.Anon.Internal.Plugin.TC.Constraints.SubRowK (
+    CSubRowK(..)
+  , parseSubRowK
+  , solveSubRowK
   ) where
 
 import Control.Monad (forM)
@@ -20,23 +20,23 @@ import Data.Record.Anon.Internal.Plugin.TC.TyConSubst
 
 import qualified Data.Record.Anon.Internal.Plugin.TC.Row.KnownRow  as KnownRow
 import qualified Data.Record.Anon.Internal.Plugin.TC.Row.ParsedRow as ParsedRow
-import GHC.Data.FastString
-import GHC.Tc.Types.Constraint
-import GHC.Tc.Types.Evidence
 
 {-------------------------------------------------------------------------------
   Definition
 -------------------------------------------------------------------------------}
 
--- | Parsed form of @SubRow@
+-- | Parsed form of @SubRowK@
 --
--- > SubRow (r :: [(Symbol, k)]) (r' :: [(Symbol, k)])
-data CSubRow = CSubRow {
+-- > SubRow f f' (r :: [(Symbol, k)]) (r' :: [(Symbol, k)])
+data CSubRowK = CSubRowK {
       -- | Fields on the LHS
       subrowParsedLHS :: Fields
 
       -- | Fields on the RHS
     , subrowParsedRHS :: Fields
+
+    , subrowFType1 :: Type
+    , subrowFType2 :: Type
 
       -- | Left-hand side (@r@)
     , subrowTypeLHS :: Type
@@ -45,44 +45,51 @@ data CSubRow = CSubRow {
     , subrowTypeRHS :: Type
 
       -- | Functor argument kind (@k@)
-    , subrowTypeKind :: Type
+    , subrowTypeKind1 :: Type
+    , subrowTypeKind2 :: Type
     }
 
 {-------------------------------------------------------------------------------
   Outputable
 -------------------------------------------------------------------------------}
 
-instance Outputable CSubRow where
-  ppr (CSubRow parsedLHS parsedRHS typeLHS typeRHS typeKind) = parens $
+instance Outputable CSubRowK where
+  ppr (CSubRowK parsedLHS parsedRHS fType1 fType2 typeLHS typeRHS typeKind1 typeKind2) = parens $
       text "CSubRow" <+> braces (vcat [
           text "subrowParsedLHS"   <+> text "=" <+> ppr parsedLHS
         , text "subrowParsedRHS"   <+> text "=" <+> ppr parsedRHS
+        , text "subrowFType1"    <+> text "=" <+> ppr fType1
+        , text "subrowFType2"    <+> text "=" <+> ppr fType2
         , text "subrowTypeLHS"     <+> text "=" <+> ppr typeLHS
         , text "subrowTypeRHS"     <+> text "=" <+> ppr typeRHS
-        , text "subrowTypeKind"    <+> text "=" <+> ppr typeKind
+        , text "subrowTypeKind1"    <+> text "=" <+> ppr typeKind1
+        , text "subrowTypeKind2"    <+> text "=" <+> ppr typeKind2
         ])
 
 {-------------------------------------------------------------------------------
   Parser
 -------------------------------------------------------------------------------}
 
-parseSubRow ::
+parseSubRowK ::
      TyConSubst
   -> ResolvedNames
   -> Ct
-  -> ParseResult Void (GenLocated CtLoc CSubRow)
-parseSubRow tcs rn@ResolvedNames{..} =
-    parseConstraint' clsSubRow $ \ args ->
+  -> ParseResult Void (GenLocated CtLoc CSubRowK)
+parseSubRowK tcs rn@ResolvedNames{..} =
+    parseConstraint' clsSubRowK $ \ args ->
       case args of
-        [typeKind, typeLHS, typeRHS] -> do
+        [typeKind1, typeKind2, fType1, fType2, typeLHS, typeRHS] -> do
           fieldsLHS <- ParsedRow.parseFields tcs rn typeLHS
           fieldsRHS <- ParsedRow.parseFields tcs rn typeRHS
-          return $ CSubRow {
+          return $ CSubRowK {
                 subrowParsedLHS = fieldsLHS
               , subrowParsedRHS = fieldsRHS
+              , subrowFType1    = fType1
+              , subrowFType2    = fType2
               , subrowTypeLHS   = typeLHS
               , subrowTypeRHS   = typeRHS
-              , subrowTypeKind  = typeKind
+              , subrowTypeKind1  = typeKind1
+              , subrowTypeKind2  = typeKind2
               }
         _ -> pprPanic "parseSubRow: expected 3 arguments" $
                text "args" <+> ppr args
@@ -91,17 +98,17 @@ parseSubRow tcs rn@ResolvedNames{..} =
   Evidence
 -------------------------------------------------------------------------------}
 
-evidenceSubRow ::
+evidenceSubRowK ::
      ResolvedNames
-  -> CSubRow
+  -> CSubRowK
   -> [(Target (KnownField Type), Source (KnownRowField Type))]
   -> TcPluginM 'Solve EvTerm
-evidenceSubRow ResolvedNames{..} CSubRow{..} fields = do
+evidenceSubRowK ResolvedNames{..} CSubRowK{..} fields = do
     return $
       evDataConApp
-        (classDataCon clsSubRow)
+        (classDataCon clsSubRowK)
         typeArgsEvidence
-        [ mkCoreApps (Var idEvidenceSubRow) $ concat [
+        [ mkCoreApps (Var idEvidenceSubRowK) $ concat [
               map Type typeArgsEvidence
             , [ mkListExpr intTy $
                   map (mkUncheckedIntExpr . fromIntegral) indices ]
@@ -110,7 +117,10 @@ evidenceSubRow ResolvedNames{..} CSubRow{..} fields = do
   where
     typeArgsEvidence :: [Type]
     typeArgsEvidence = [
-          subrowTypeKind
+          subrowTypeKind1
+        , subrowTypeKind2
+        , subrowFType1
+        , subrowFType2
         , subrowTypeLHS
         , subrowTypeRHS
         ]
@@ -123,31 +133,30 @@ evidenceSubRow ResolvedNames{..} CSubRow{..} fields = do
   Solver
 -------------------------------------------------------------------------------}
 
-solveSubRow ::
+solveSubRowK ::
      ResolvedNames
   -> Ct
-  -> GenLocated CtLoc CSubRow
+  -> GenLocated CtLoc CSubRowK
   -> TcPluginM 'Solve (Maybe (EvTerm, Ct), [Ct])
-solveSubRow rn@ResolvedNames{..} orig (L loc proj@CSubRow{..}) =
+solveSubRowK rn orig (L loc proj@CSubRowK{..}) =
     case ( ParsedRow.allKnown subrowParsedLHS
          , ParsedRow.allKnown subrowParsedRHS
          ) of
       (Just lhs, Just rhs) ->
         case rhs `KnownRow.isSubRowOf` lhs of
           Right inBoth -> do
-            eqs <- forM inBoth $ \(Target r, Source l) -> newWanted loc $
-                     mkEqPredRole
-                       Nominal
-                       (knownRowFieldInfo l)
-                       (knownFieldInfo r)
-            ev  <- evidenceSubRow rn proj inBoth
+            eqs <- forM inBoth $ \(Target r, Source l) ->
+                      let o = WantedSuperclassOrigin (mkEqPredRole Representational t1 t2) -- Nothing True
+                          t1 = (mkAppTy subrowFType1 (knownRowFieldInfo l))
+                          t2 = (mkAppTy subrowFType2 (knownFieldInfo r))
+                      in newWanted (updateCtLocOrigin loc o) $
+                          mkEqPredRole
+                            Representational
+                              t1 t2
+            ev  <- evidenceSubRowK rn proj inBoth
             return (Just (ev, orig), map mkNonCanonical eqs)
-          Left err -> do
+          Left _err ->
             -- TODO: Return a custom error message
-            unsat <- newWanted loc $ mkClassPred clsUnsatisfiable [mkTyConApp tyConErrorText [mkStrLitTy (mkFastString (show err))]]
-            let var = ctEvEvId unsat
-            let ev :: EvTerm
-                ev = EvExpr (evId var)
-            return (Just (ev, orig), [mkNonCanonical unsat])
+            return (Nothing, [])
       _otherwise ->
         return (Nothing, [])

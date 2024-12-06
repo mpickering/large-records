@@ -1,8 +1,7 @@
 packages: large-generics
-        , large-records
-        , large-records-benchmarks
+        --, large-records
+        --, large-records-benchmarks
         , large-anon
-        , beam-large-records
         , typelet
 
 -- We need beam 0.10.3.0 (not yet released), to include #585

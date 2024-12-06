@@ -241,9 +241,9 @@ isSubRowOf :: forall a b.
   -> KnownRow b  -- ^ Source
   -> Either NotSubRow [(Target (KnownField a), Source (KnownRowField b))]
 target `isSubRowOf` source =
-    if not (knownRecordAllVisible target) then
-      Left TargetContainsShadowedFields
-    else
+--    if not (knownRecordAllVisible target) then
+--      Left TargetContainsShadowedFields
+--    else
         uncurry checkMissing
       . partitionEithers
         -- It doesn't matter which order we process 'target' in:

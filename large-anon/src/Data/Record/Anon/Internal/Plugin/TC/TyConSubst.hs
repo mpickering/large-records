@@ -14,6 +14,8 @@ import Data.Either (partitionEithers)
 import Data.Foldable (toList, asum)
 import Data.List.NonEmpty (NonEmpty(..))
 import Data.Map (Map)
+import GHC.Core.TyCo.Rep
+import GHC.Prelude
 
 import qualified Data.Map as Map
 
@@ -294,15 +296,18 @@ mkTyConSubst = process . classify
 -- See 'TyConSubst' for a detailed discussion.
 splitTyConApp_upTo :: TyConSubst -> Type -> Maybe (NonEmpty (TyCon, [Type]))
 splitTyConApp_upTo subst typ = asum [
-      -- Direct match
       do tyCon <- tyConAppTyCon_maybe fn
          return ((tyCon, args) :| [])
+
+    , isCastTy subst typ
 
       -- Indirect match
     , do var <- getTyVar_maybe fn
          fmap (fmap (second (++ args))) $ tyConSubstLookup var subst
     ]
   where
+    isCastTy subt (CastTy t _) = splitTyConApp_upTo subt t
+    isCastTy _ t = Nothing
     (fn, args) = splitAppTys typ
 
 {-------------------------------------------------------------------------------

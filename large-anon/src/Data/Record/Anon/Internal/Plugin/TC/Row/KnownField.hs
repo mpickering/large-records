@@ -24,6 +24,7 @@ import Data.Record.Anon.Internal.Core.FieldName (FieldName(..))
 import qualified Data.Record.Anon.Internal.Core.FieldName as FieldName
 
 import Data.Record.Anon.Internal.Plugin.TC.GhcTcPluginAPI
+import Data.Record.Anon.Internal.Plugin.TC.NameResolution
 
 {-------------------------------------------------------------------------------
   Definition
@@ -58,9 +59,12 @@ fromString name = KnownField {
 -------------------------------------------------------------------------------}
 
 -- | Name of the field as a term-level expression
-toExpr :: KnownField a -> TcPluginM 'Solve CoreExpr
-toExpr KnownField{knownFieldName = FieldName{..}} =
-    mkStringExpr fieldNameLabel
+toExpr :: ResolvedNames -> KnownField a -> TcPluginM 'Solve CoreExpr
+toExpr ResolvedNames{..} KnownField{knownFieldName = FieldName{..}} = do
+    string_expr <- mkStringExpr fieldNameLabel
+    platform <- getTargetPlatform
+    let int_expr = mkIntExprInt platform fieldNameHash
+    return $ mkCoreConApps (tyConSingleDataCon tyConFieldName) [int_expr, string_expr]
 
 -- | Type-level pair @'(n, a)@ or @'(n, f a)@
 toType :: Maybe Type -> KnownField Type -> Type
